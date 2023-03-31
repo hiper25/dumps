@@ -29,14 +29,15 @@
 #
 
 import /vendor/etc/init/init.batterysecret.rc
-import /vendor/etc/init/init.batteryd.rc
 import /vendor/etc/init/init.mi_thermald.rc
 import /vendor/etc/init/init.charge_logger.rc
 import /vendor/etc/init/init.mishow.ctl.rc
+import /vendor/etc/init/init.nanoapp.rc
 
 on early-init
-    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules audio_q6_pdr audio_q6_notifier audio_snd_event audio_apr audio_adsp_loader audio_q6 audio_native audio_usf audio_pinctrl_wcd audio_pinctrl_lpi audio_swr audio_platform audio_hdmi audio_stub audio_wcd_core audio_wsa881x audio_bolero_cdc audio_wsa_macro audio_va_macro audio_rx_macro audio_tx_macro audio_wcd938x audio_wcd938x_slave audio_cs35l41 audio_tfa98xx audio_machine_kona
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules audio_q6_pdr audio_q6_notifier audio_snd_event audio_apr audio_adsp_loader audio_q6 audio_native audio_usf audio_pinctrl_wcd audio_pinctrl_lpi audio_swr audio_platform audio_hdmi audio_stub audio_wcd_core audio_wsa881x audio_bolero_cdc audio_wsa_macro audio_va_macro audio_rx_macro audio_tx_macro audio_wcd938x audio_wcd938x_slave audio_cs35l41 audio_tfa98xx audio_aw882xx audio_machine_kona
     write /proc/sys/kernel/sched_boost 1
+    write /dev/memcg/camera/provider/memory.soft_limit_in_bytes 36818038505472
 
 on init
     write /dev/stune/foreground/schedtune.sched_boost_no_override 1
@@ -56,6 +57,7 @@ on init
     chown system system /sys/class/leds/white/brightness
     chown system system /sys/class/leds/white/trigger
     chown system system /sys/class/leds/white/breath
+    chmod 0666 /dev/uhid
 
 on early-fs
     start vold
@@ -84,6 +86,8 @@ on fs
     chown system system /dev/tfa_rw
     chown system system /dev/tfa_rpc
     chown system system /dev/tfa_control
+    chown system system /sys/class/smartpa/re25_calib
+    chmod 0666 /sys/class/smartpa/re25_calib
     chmod 0660 /dev/tfa_reg
     chmod 0660 /dev/tfa_rw
     chmod 0660 /dev/tfa_rpc
@@ -131,13 +135,15 @@ on post-fs-data
 
 on early-boot
     start vendor.sensors
+    verity_update_state
+
 on property:ro.boot.dp=0x0
     write /sys/bus/platform/devices/c440000.qcom,spmi:qcom,pm8150@0:qcom,power-on@800/pshold_reboot 7
 
 on boot
     chown system system /sys/class/touch/touch_dev/palm_sensor
     chown system system /sys/class/touch/touch_dev/partial_diff_data
-    write /dev/cpuset/audio-app/cpus 1-2
+    write /dev/cpuset/audio-app/cpus 0-7
     # Add a cpuset for the camera daemon
     # We want all cores for camera
     mkdir /dev/cpuset/camera-daemon
@@ -200,6 +206,18 @@ on boot
     chmod 0664 /sys/module/migt/parameters/del_bclus_affinity_uidlist
     chown root system /sys/module/migt/parameters/reset_clus_affinity_uidlist
     chmod 0664 /sys/module/migt/parameters/reset_clus_affinity_uidlist
+    chmod 0664 /sys/module/migt/parameters/add_rebind_task_lit
+    chmod 0664 /sys/module/migt/parameters/add_rebind_task_mid
+    chmod 0664 /sys/module/migt/parameters/add_rebind_task_big
+    chmod 0664 /sys/module/migt/parameters/del_rebind_task_lit
+    chmod 0664 /sys/module/migt/parameters/del_rebind_task_mid
+    chmod 0664 /sys/module/migt/parameters/del_rebind_task_big
+    chown root system /sys/module/migt/parameters/add_rebind_task_lit
+    chown root system /sys/module/migt/parameters/add_rebind_task_mid
+    chown root system /sys/module/migt/parameters/add_rebind_task_big
+    chown root system /sys/module/migt/parameters/del_rebind_task_lit
+    chown root system /sys/module/migt/parameters/del_rebind_task_mid
+    chown root system /sys/module/migt/parameters/del_rebind_task_big
 
 on property:vendor.display.lcd_density=560
    setprop dalvik.vm.heapgrowthlimit 256m
@@ -285,6 +303,10 @@ on property:vendor.audio.cit.spkcal.copy=true
     chmod 666 /mnt/vendor/persist/audio/cs35l41_cal_spk7.txt
     chmod 666 /mnt/vendor/persist/audio/cs35l41_cal_spk8.bin
     chmod 666 /mnt/vendor/persist/audio/cs35l41_cal_spk8.txt
+    copy /data/vendor/cit/aw_cali.bin /mnt/vendor/persist/audio/aw_cali.bin
+    copy /data/vendor/cit/aw88263_chk.txt /mnt/vendor/persist/audio/aw88263_chk.txt
+    chmod 666 /mnt/vendor/persist/audio/aw_cali.bin
+    chmod 666 /mnt/vendor/persist/audio/aw88263_chk.txt
 
 service audioshell_service /vendor/bin/audioshell_service
     oneshot
@@ -333,16 +355,23 @@ on property:init.svc.vendor.per_mgr=running
 on property:sys.shutdown.requested=*
     stop vendor.per_proxy
 
-on property:vold.decrypt=trigger_restart_framework
-   start cnss_diag
+#on property:vold.decrypt=trigger_restart_framework
+#   start vendor.cnss_diag
 
-service cnss_diag /vendor/bin/cnss_diag -q -f -b 128 -t HELIUM
+on property:persist.vendor.cnss_diag.enable=true
+    start vendor.cnss_diag
+
+on property:persist.vendor.cnss_diag.enable=false
+    stop vendor.cnss_diag
+
+service vendor.cnss_diag /vendor/bin/cnss_diag -q -f -b 128 -t HELIUM
    class main
    user system
    group system wifi inet sdcard_rw media_rw diag
+   disabled
    oneshot
 
-service tcpdump /vendor/bin/tcpdump -i any -W 2 -C 2 -s 134 -w /data/vendor/wlan_logs/tcpdump.pcap
+service vendor.tcpdump /vendor/bin/tcpdump -i any -W 2 -C 2 -s 134 -w /data/vendor/wlan_logs/tcpdump.pcap
     class main
     user root
     group root wifi
@@ -356,20 +385,39 @@ service sniffer /vendor/bin/tcpdump -i wlan0 -w /data/vendor/wlan_logs/sniffer.p
     disabled
     oneshot
 
-on property:ro.miui.region=* && property:sys.user.0.ce_available=true
-    start tcpdump
+service sniffer.circular /vendor/bin/tcpdump -i wlan0 -W 3 -C 300 -w /data/vendor/wlan_logs/sniffer.pcap
+    class main
+    user root
+    group root wifi
+    disabled
+    oneshot
+
+#on property:sys.user.0.ce_available=true
+#    start vendor.tcpdump
+
+on property:persist.vendor.tcpdump.enable=true
+    start vendor.tcpdump
+
+on property:persist.vendor.tcpdump.enable=false
+    stop vendor.tcpdump
 
 on property:vendor.hardware.wlan.runtcpdump=stop
-     stop tcpdump
+     stop vendor.tcpdump
 
  on property:vendor.hardware.wlan.runtcpdump=start
-     start tcpdump
+     start vendor.tcpdump
 
  on property:vendor.hardware.wlan.runsniffer=stop
      stop sniffer
 
  on property:vendor.hardware.wlan.runsniffer=start
      start sniffer
+
+ on property:vendor.hardware.wlan.runsniffer.circular=stop
+     stop sniffer.circular
+
+ on property:vendor.hardware.wlan.runsniffer.circular=start
+     start sniffer.circular
 
 service startpktlog /system/bin/iwpriv wlan0 pktlog 2
     class main
@@ -463,8 +511,70 @@ on post-fs-data
     restorecon /sys/module/migt/parameters/stask_candidate_num
     chmod 0777 /sys/module/migt/parameters/fas_power_mod
     restorecon /sys/module/migt/parameters/fas_power_mod
+    chmod 0777 /sys/module/metis/parameters/minor_window_app
+    restorecon /sys/module/metis/parameters/minor_window_app
     chmod 0666 /sys/module/migt/parameters/mi_viptask
     restorecon /sys/module/migt/parameters/mi_viptask
+
+    chmod 0666 /dev/metis
+    restorecon /dev/metis
+    chown 0666 /sys/module/metis/parameters
+    chmod 0664 /sys/module/metis/parameters/add_rebind_task_lit
+    chmod 0664 /sys/module/metis/parameters/add_rebind_task_mid
+    chmod 0664 /sys/module/metis/parameters/add_rebind_task_big
+    chmod 0664 /sys/module/metis/parameters/del_rebind_task_lit
+    chmod 0664 /sys/module/metis/parameters/del_rebind_task_mid
+    chmod 0664 /sys/module/metis/parameters/del_rebind_task_big
+    chmod 0664 /sys/module/metis/parameters/add_lclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/del_lclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/add_mclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/del_mclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/add_bclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/del_bclus_affinity_uidlist
+    chmod 0664 /sys/module/metis/parameters/reset_clus_affinity_uidlist
+    chown root system /sys/module/metis/parameters
+    chown root system /sys/module/metis/parameters/add_rebind_task_lit
+    chown root system /sys/module/metis/parameters/add_rebind_task_mid
+    chown root system /sys/module/metis/parameters/add_rebind_task_big
+    chown root system /sys/module/metis/parameters/del_rebind_task_lit
+    chown root system /sys/module/metis/parameters/del_rebind_task_mid
+    chown root system /sys/module/metis/parameters/del_rebind_task_big
+    chown root system /sys/module/metis/parameters/add_lclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/del_lclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/add_mclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/del_mclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/add_bclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/del_bclus_affinity_uidlist
+    chown root system /sys/module/metis/parameters/reset_clus_affinity_uidlist
+
+    chmod 0666 /dev/metis
+    restorecon /dev/metis
+    chmod 0666 /sys/module/metis/parameters/mi_viptask
+    restorecon /sys/module/metis/parameters/mi_viptask
+    chmod 0666 /sys/module/metis/parameters/mi_boost_duration
+    restorecon /sys/module/metis/parameters/mi_boost_duration
+    chmod 0666 /sys/class/thermal/thermal_message/boost
+    restorecon /sys/class/thermal/thermal_message/boost
+    chmod 0666 /sys/module/metis/parameters/vip_link_enable
+    restorecon /sys/module/metis/parameters/vip_link_enable
+    chmod 0666 /sys/module/metis/parameters/mi_fboost_enable
+    restorecon /sys/module/metis/parameters/mi_fboost_enable
+    chmod 0666 /sys/module/metis/parameters/add_mi_viptask_enqueue_boost
+    restorecon /sys/module/metis/parameters/add_mi_viptask_enqueue_boost
+    chmod 0666 /sys/module/metis/parameters/del_mi_viptask_enqueue_boost
+    restorecon /sys/module/metis/parameters/del_mi_viptask_enqueue_boost
+    chmod 0666 /sys/module/metis/parameters/add_mi_viptask_sched_priority
+    restorecon /sys/module/metis/parameters/add_mi_viptask_sched_priority
+    chmod 0666 /sys/module/metis/parameters/del_mi_viptask_sched_priority
+    restorecon /sys/module/metis/parameters/del_mi_viptask_sched_priority
+    chmod 0666 /sys/module/metis/parameters/add_mi_viptask_sched_lit_core
+    restorecon /sys/module/metis/parameters/add_mi_viptask_sched_lit_core
+    chmod 0666 /sys/module/metis/parameters/del_mi_viptask_sched_lit_core
+    restorecon /sys/module/metis/parameters/del_mi_viptask_sched_lit_core
+    chmod 0666 /sys/module/metis/parameters/is_break_enable
+    restorecon /sys/module/metis/parameters/is_break_enable
+    chmod 0666 /sys/module/metis/parameters/binder_from_pid
+    restorecon /sys/module/metis/parameters/binder_from_pid
 
 service mi-serial-sh /vendor/bin/init.mi.serial.sh
     class late_start
@@ -475,6 +585,18 @@ service mi-serial-sh /vendor/bin/init.mi.serial.sh
 
 on post-fs && property:ro.product.device=elish
     start mi-serial-sh
+
+on post-fs && property:ro.product.device=dagu
+    start mi-serial-sh
+
+on post-fs && property:ro.product.device=pipa
+    start mi-serial-sh
+
+on property:ro.product.device=pipa && property:ro.vendor.ril.oem.sno=*
+    setprop ro.ril.oem.sno ${ro.vendor.ril.oem.sno}
+
+on property:ro.product.device=pipa && property:ro.vendor.ril.oem.psno=*
+    setprop ro.ril.oem.psno ${ro.vendor.ril.oem.psno}
 
 on property:sys.lmkd.memory.start_reclaim_in_video_record=1
     setprop sys.lmkd.memory.start_reclaim_in_video_record 0
