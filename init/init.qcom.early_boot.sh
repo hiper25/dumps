@@ -503,6 +503,14 @@ case "$product" in
         *)
         ;;
 esac
+
+case "$product" in
+        "pipa")
+         setprop vendor.display.lcd_density 400
+         ;;
+        *)
+        ;;
+esac
 # Setup display nodes & permissions
 # HDMI can be fb1 or fb2
 # Loop through the sysfs nodes and determine

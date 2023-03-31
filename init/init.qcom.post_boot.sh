@@ -954,6 +954,11 @@ function configure_memory_parameters() {
     ProductName=`getprop ro.product.name`
     low_ram=`getprop ro.config.low_ram`
 
+    # MIUI ADD: START
+    if [ "$ProductName" == "pipa" ]; then
+        echo 3 > /proc/sys/vm/page-cluster
+    fi
+
     if [ "$ProductName" == "msmnile" ] || [ "$ProductName" == "kona" ] || [ "$ProductName" == "sdmshrike_au" ] || [ "$ProductName" == "alioth" ]; then
         # Enable ZRAM
         configure_zram_parameters
@@ -5757,7 +5762,7 @@ case "$target" in
 	# configure input boost settings
 	echo "0:1344000" > /sys/devices/system/cpu/cpu_boost/input_boost_freq
 	echo 120 > /sys/devices/system/cpu/cpu_boost/input_boost_ms
-	echo "0:1804800 1:0 2:0 3:0 4:2419200 5:0 6:0 7:2841600" > /sys/devices/system/cpu/cpu_boost/powerkey_input_boost_freq
+	echo "0:1804800 1:0 2:0 3:0 4:2419200 5:0 6:0 7:3187200" > /sys/devices/system/cpu/cpu_boost/powerkey_input_boost_freq
 	echo 400 > /sys/devices/system/cpu/cpu_boost/powerkey_input_boost_ms
 
 	# configure governor settings for gold cluster
